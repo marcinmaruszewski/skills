@@ -33,7 +33,7 @@ If you are none of these CLIs, say so once and continue the task unguarded.
 
 Every guard message you write is one line.
 
-1. Run `<provider> --gate` before you start, and then at the natural breaks in your own work: when you finish an item of your plan or todo list, after a test or build run, and before a commit. Results are cached for 5 minutes, so checking often costs nothing.
+1. Run `<provider> --gate` before you start, and then at the natural breaks in your own work: when you finish an item of your plan or todo list, after a test or build run, and before a commit. Run the check on its own, once the work before it has finished. Results are cached for 5 minutes, so checking often costs nothing.
 2. Act on the first word of the line it prints:
    - `continue`: keep working silently.
    - `pause`: tell the user you are pausing until the reset shown, then **wait** (below).
