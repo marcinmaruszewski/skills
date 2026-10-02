@@ -28,7 +28,7 @@ When the skill is invoked without a task, or the user asks how much usage is lef
 
 When the user gives you a task and asks you to guard it (for example "keep /usage-guard in mind").
 
-Guard only the CLI you are running in: Claude Code → `claude`, Codex → `codex`, Antigravity → `agy`. For `agy`, add `--group <key>` with the model group you run on, such as `gemini_models` or `claude_and_gpt_models`; a wrong key returns an error listing the valid ones.
+Guard only the CLI you are running in: Claude Code (or the Claude Agent SDK) → `claude`, Codex → `codex`, Antigravity → `agy`. For `agy`, add `--group <key>` with the model group you run on, such as `gemini_models` or `claude_and_gpt_models`; a wrong key returns an error listing the valid ones.
 If you are none of these CLIs, say so once and continue the task unguarded.
 
 Every guard message you write is one line.
