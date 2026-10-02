@@ -531,7 +531,7 @@ def gate(provider: Provider, result: Result, group: str | None, now: datetime) -
     exhausted = [w for w in windows if w.used_percent >= THRESHOLD]
     if not exhausted:
         pause_clear(provider.key)
-        summary = ", ".join(f"{w.label} {w.used_percent:.1f}%" for w in worst_per_window(windows))
+        summary = ", ".join(f"{w.label} {w.used_percent:.1f}% used" for w in worst_per_window(windows))
         return EXIT_CONTINUE, f"continue: {summary}"
 
     # The window that resets last decides how long the pause lasts; unknown reset times count as latest.
@@ -540,7 +540,7 @@ def gate(provider: Provider, result: Result, group: str | None, now: datetime) -
     reset = "reset time unknown"
     if last.resets_at:
         reset = f"resets {short_iso(last.resets_at)} (in {time_left(last.resets_at)})"
-    detail = f"{last.label} {last.used_percent:.1f}%, {reset}"
+    detail = f"{last.label} {last.used_percent:.1f}% used, {reset}"
 
     if wait is not None and wait > MAX_WAIT_MINUTES:
         pause_clear(provider.key)
