@@ -1,0 +1,5 @@
+interface:
+  display_name: "Usage Guard"
+  short_description: "Check usage limits and guard long tasks"
+policy:
+  allow_implicit_invocation: true
