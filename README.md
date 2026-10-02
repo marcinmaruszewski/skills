@@ -1,18 +1,26 @@
-# usage-guard
+# Skills
 
-An agent skill for **Claude Code**, **Codex CLI** and **Antigravity CLI (agy)** that keeps long tasks from dying on subscription usage limits.
-
-Ask your agent to keep `/usage-guard` in mind while it works. The agent checks your 5-hour and 7-day usage at natural breaks in the work. When a limit reaches 95%, it pauses in the same session, sleeps until the window resets, and then carries on where it stopped. You don't need a new session, a handoff file or a manual restart.
+Agent skills for **Claude Code**, **Codex CLI** and **Antigravity CLI (agy)**.
 
 ## Install
 
 ```bash
-npx skills add marcinmaruszewski/usage-guard
+npx skills add marcinmaruszewski/skills
 ```
 
-Add `-g` to install globally, or `-a claude-code -a codex -a antigravity` to choose the agents.
+The installer asks which skills to take and which agents to install them on. Add `--skill usage-guard` to pick one skill up front, `-g` to install globally, or `-a claude-code -a codex -a antigravity` to choose the agents.
 
-## Usage
+## Available skills
+
+| Skill | What it does |
+|---|---|
+| [`usage-guard`](#usage-guard) | Shows subscription usage limits and keeps long tasks from dying on them |
+
+## usage-guard
+
+Keeps long tasks from dying on subscription usage limits. Ask your agent to keep `/usage-guard` in mind while it works. The agent checks your 5-hour and 7-day usage at natural breaks in the work. When a limit reaches 95%, it pauses in the same session, sleeps until the window resets, and then carries on where it stopped. You don't need a new session, a handoff file or a manual restart.
+
+### Usage
 
 **Check what's left:**
 
@@ -52,13 +60,13 @@ python3 skills/usage-guard/scripts/usage_guard.py claude --gate   # continue / p
 python3 skills/usage-guard/scripts/usage_guard.py --help
 ```
 
-## Requirements
+### Requirements
 
 - Python 3.9+, standard library only
 - macOS or Linux (Windows is untested)
 - A subscription login (not an API key) in the CLI you want to guard
 
-## Sandboxes and non-interactive runs
+### Sandboxes and non-interactive runs
 
 **Network access.** Agent sandboxes block network access by default. In an interactive session the agent asks to run the check outside the sandbox. For unattended runs, allow these domains up front:
 
@@ -68,7 +76,7 @@ python3 skills/usage-guard/scripts/usage_guard.py --help
 
 **Long waits.** Waiting for a reset can take hours, and each 9-minute sleep uses one agent turn. Raise turn limits accordingly (for example `claude -p --max-turns`), and make sure CI job timeouts allow for the wait. Otherwise the run is cut off while it waits.
 
-## Security
+### Security
 
 The script is read-only and short. Read it before you install.
 
@@ -96,7 +104,7 @@ The script is read-only and short. Read it before you install.
 
 **What the agent is told:** never to read credential files itself, so tokens never enter the model's context.
 
-## Caveats
+### Caveats
 
 - The usage endpoints are undocumented and may change without notice.
 - The Antigravity token is not refreshed by the script. If it has expired, the check returns `HTTP 401` until agy runs again and refreshes it.
