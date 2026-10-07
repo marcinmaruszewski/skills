@@ -45,9 +45,11 @@ The agent checks usage before it starts and at natural breaks in its work (a fin
 | Usage | What the agent does |
 |---|---|
 | below 95% | keeps working |
-| 95% or more, reset within 6 h | pauses, sleeps in chunks of up to 9 minutes, re-checks, and resumes after the reset |
+| 95% or more, reset within 6 h | pauses, waits for the reset, re-checks, and resumes |
 | 95% or more, reset more than 6 h away (or already waited 6 h) | stops and reports when the limit resets |
 | check failed | keeps working, mentions once that usage isn't guarded, and retries at the next break |
+
+Before a large unit of work, such as handing a ticket to a subagent, the agent reserves the share of the 5-hour window that unit is expected to use (`--reserve`). At 90% used with a 10% reserve it pauses before starting, instead of running out halfway through. An agent that delegates checks before every dispatch, counting parallel subagents together, and tells each subagent to guard its own work.
 
 The agent guards only the CLI it is running in. In Antigravity, limits apply per model group (Gemini, or Claude and GPT), and the agent watches the group it is using.
 
@@ -57,6 +59,7 @@ The agent guards only the CLI it is running in. In Antigravity, limits apply per
 python3 skills/usage-guard/scripts/usage_guard.py            # all CLIs, human-readable
 python3 skills/usage-guard/scripts/usage_guard.py codex --json
 python3 skills/usage-guard/scripts/usage_guard.py claude --gate   # continue / pause / stop, for scripts
+python3 skills/usage-guard/scripts/usage_guard.py claude --gate --reserve 10 --wait   # block until 10% of the 5h window is free
 python3 skills/usage-guard/scripts/usage_guard.py --help
 ```
 
@@ -74,7 +77,7 @@ python3 skills/usage-guard/scripts/usage_guard.py --help
 - `chatgpt.com` (Codex)
 - `daily-cloudcode-pa.googleapis.com` and `cloudcode-pa.googleapis.com` (Antigravity)
 
-**Long waits.** Waiting for a reset can take hours, and each 9-minute sleep uses one agent turn. Raise turn limits accordingly (for example `claude -p --max-turns`), and make sure CI job timeouts allow for the wait. Otherwise the run is cut off while it waits.
+**Long waits.** Waiting for a reset can take hours. In a Claude Code main session the agent runs `--gate --wait` in the background, which costs one turn for the whole wait. Elsewhere each 9-minute sleep uses one agent turn: raise turn limits accordingly (for example `claude -p --max-turns`). Either way, make sure CI job timeouts allow for the wait, or the run is cut off while it waits.
 
 ### Security
 
@@ -108,7 +111,15 @@ The script is read-only and short. Read it before you install.
 
 - The usage endpoints are undocumented and may change without notice.
 - The Antigravity token is not refreshed by the script. If it has expired, the check returns `HTTP 401` until agy runs again and refreshes it.
-- A 95% threshold leaves headroom for the waiting turns themselves. A single very large step can still overshoot it between checks.
+- A 95% threshold leaves headroom for the waiting turns themselves. A step larger than its `--reserve` can still overshoot it between checks.
+
+### Development
+
+The `--gate` policy has tests (standard library only):
+
+```bash
+python3 -m unittest discover -s tests
+```
 
 ## License
 

@@ -27,7 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 HOME = Path.home()
 IS_MACOS = platform.system() == "Darwin"
@@ -43,6 +43,8 @@ THRESHOLD = 95.0  # percent; headroom for the waiting turns themselves
 MAX_WAIT_MINUTES = 360  # longer waits stop the task instead of pausing it
 MAX_SLEEP = 540  # seconds; fits a 10-minute shell timeout
 PAUSE_GAP = 1800  # seconds between pause checks after which a new pause begins
+WAIT_POLL = 300  # seconds between --wait checks; re-reading the clock survives a suspended machine
+RESERVED_WINDOW = "5h"  # --reserve covers one unit of work, which only the short window feels
 EXIT_CONTINUE, EXIT_ERROR, EXIT_PAUSE, EXIT_STOP = 0, 1, 3, 4
 
 
@@ -517,22 +519,31 @@ def provider_json(provider: Provider, result: Result, now: datetime) -> dict[str
     return out
 
 
-def gate(provider: Provider, result: Result, group: str | None, now: datetime) -> tuple[int, str]:
+class Decision(NamedTuple):
+    code: int
+    line: str
+    sleep: int | None = None  # seconds, set on pause only
+
+
+def gate(provider: Provider, result: Result, group: str | None, now: datetime, reserve: float = 0.0) -> Decision:
     """Turn one provider's usage into a single decision line for an agent guarding a task."""
     if result.error:
-        return EXIT_ERROR, f"error: {result.error}"
+        return Decision(EXIT_ERROR, f"error: {result.error}")
     windows = result.windows
     if group:
         windows = [w for w in windows if scope_key(w.scope) == group]
         if not windows:
             known = ", ".join(sorted({scope_key(w.scope) for w in result.windows}))
-            return EXIT_ERROR, f"error: unknown group {group} (known: {known})"
+            return Decision(EXIT_ERROR, f"error: unknown group {group} (known: {known})")
 
-    exhausted = [w for w in windows if w.used_percent >= THRESHOLD]
+    def reserved(w: Window) -> float:
+        return reserve if w.window == RESERVED_WINDOW else 0.0
+
+    exhausted = [w for w in windows if w.used_percent + reserved(w) >= THRESHOLD]
     if not exhausted:
         pause_clear(provider.key)
         summary = ", ".join(f"{w.label} {w.used_percent:.1f}% used" for w in worst_per_window(windows))
-        return EXIT_CONTINUE, f"continue: {summary}"
+        return Decision(EXIT_CONTINUE, f"continue: {summary}")
 
     # The window that resets last decides how long the pause lasts; unknown reset times count as latest.
     last = max(exhausted, key=lambda w: (w.resets_at is None, w.resets_at or now))
@@ -540,17 +551,31 @@ def gate(provider: Provider, result: Result, group: str | None, now: datetime) -
     reset = "reset time unknown"
     if last.resets_at:
         reset = f"resets {short_iso(last.resets_at)} (in {time_left(last.resets_at)})"
-    detail = f"{last.label} {last.used_percent:.1f}% used, {reset}"
+    detail = f"{last.label} {last.used_percent:.1f}% used"
+    if last.used_percent < THRESHOLD:
+        detail += f" + {reserved(last):g}% reserved"
+    detail += f", {reset}"
 
     if wait is not None and wait > MAX_WAIT_MINUTES:
         pause_clear(provider.key)
-        return EXIT_STOP, f"stop: {detail}"
+        return Decision(EXIT_STOP, f"stop: {detail}")
     waited = pause_minutes(provider.key)
     if waited is not None and waited > MAX_WAIT_MINUTES:
         pause_clear(provider.key)
-        return EXIT_STOP, f"stop: {detail}; already waited {MAX_WAIT_MINUTES // 60} h"
+        return Decision(EXIT_STOP, f"stop: {detail}; already waited {MAX_WAIT_MINUTES // 60} h")
     sleep = MAX_SLEEP if wait is None else min(MAX_SLEEP, wait * 60 + 60)
-    return EXIT_PAUSE, f"pause: {detail}; sleep {sleep}"
+    return Decision(EXIT_PAUSE, f"pause: {detail}; sleep {sleep}", sleep)
+
+
+def wait_gate(provider: Provider, group: str | None, reserve: float) -> Decision:
+    """Sleep through pauses and failed checks until the gate says continue or stop."""
+    deadline = time.time() + MAX_WAIT_MINUTES * 60
+    while True:
+        decision = gate(provider, collect(provider), group, datetime.now(timezone.utc), reserve)
+        # A pause cannot outlast the deadline (gate turns it into stop); a failing check can.
+        if decision.code in (EXIT_CONTINUE, EXIT_STOP) or time.time() >= deadline:
+            return decision
+        time.sleep(min(decision.sleep or WAIT_POLL, WAIT_POLL))
 
 
 HELP_EPILOG = """\
@@ -576,6 +601,11 @@ how data is fetched (read-only, tokens are never written or printed):
             has already lasted 6 h
   error     the check failed                                    exit 1
 
+  --reserve N  counts N more percent on the 5h window, so a unit of work
+               expected to use N% starts only if it can finish
+  --wait       sleeps through pauses and failed checks (re-checking every
+               5 minutes, for up to 6 h) and prints only the final line
+
 Results are cached for 5 minutes in a private temp directory (percentages and
 reset times only, plus pause timestamps for --gate). On HTTP 429 the last
 cached result is returned as stale. All endpoints are undocumented and may
@@ -599,9 +629,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     output.add_argument("--json", action="store_true", help="machine-readable output")
     output.add_argument("--gate", action="store_true", help="one decision line for a guarded task")
     parser.add_argument("--group", help="with --gate on agy: the model group to guard, e.g. gemini_models")
+    parser.add_argument(
+        "--reserve", type=float, default=0.0, metavar="N", help="with --gate: percent of the 5h window to keep free"
+    )
+    parser.add_argument("--wait", action="store_true", help="with --gate: wait until continue or stop")
     args = parser.parse_args(argv)
     if args.gate and args.provider == "all":
         parser.error("--gate needs a single provider")
+    if (args.wait or args.reserve) and not args.gate:
+        parser.error("--reserve and --wait need --gate")
+    if not 0 <= args.reserve < THRESHOLD:
+        parser.error(f"--reserve must be at least 0 and below {THRESHOLD:g}")
     grouped = {p.key for p in PROVIDERS if p.grouped}
     if args.group and not (args.gate and args.provider in grouped):
         parser.error(f"--group needs --gate and a provider with model groups ({', '.join(sorted(grouped))})")
@@ -611,13 +649,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     selected = [p for p in PROVIDERS if args.provider in ("all", p.key)]
-    results = [(p, collect(p)) for p in selected]
-
     if args.gate:
-        provider, result = results[0]
-        code, line = gate(provider, result, args.group, datetime.now(timezone.utc))
-        print(line)
-        return code
+        provider = selected[0]
+        if args.wait:
+            decision = wait_gate(provider, args.group, args.reserve)
+        else:
+            decision = gate(provider, collect(provider), args.group, datetime.now(timezone.utc), args.reserve)
+        print(decision.line)
+        return decision.code
+
+    results = [(p, collect(p)) for p in selected]
     if args.json:
         now = datetime.now(timezone.utc)
         out: dict[str, Any] = {"checked_at": now.astimezone().isoformat(timespec="seconds")}
