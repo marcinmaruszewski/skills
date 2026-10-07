@@ -52,9 +52,9 @@ When you hand work to subagents, the dispatch is your control point: a running s
 
 Wait until the gate prints `continue`, then resume exactly where you left off. Keep the `--reserve` you paused with. While waiting, the only commands you run are the wait and the check.
 
-- **Claude Code main session:** run `<provider> --gate --wait` once as a background command and stay idle until it finishes. It sleeps and re-checks on its own for up to 6 hours, then prints one line: `continue` resumes, `stop` ends the task as above, `error` means run it again.
+- **Claude Code main session:** run `<provider> --gate --wait` once as a background command and stay idle until it finishes. It sleeps and re-checks on its own for up to 6 hours, then prints one line: `continue` resumes, `stop` ends the task as above, `error` means the checks kept failing for 6 hours: end the task with a message quoting the line, because the last known state was exhausted. Do not run the wait again.
 - **Subagent or other CLI:** a subagent ends with its turn, so repeat in the foreground:
   1. Run `sleep N`, with N taken from the `sleep N` at the end of the `pause` line (at most 540 seconds). Set the shell tool timeout above it; in Claude Code use 600000 ms. If the shell refuses a foreground sleep, run it in the background and wait for it to finish. If a sleep is killed by a timeout, halve N.
-  2. Run `--gate` again. `stop` ends the task as above. `error` means sleep again and retry.
+  2. Run `--gate` again. `stop` ends the task as above. `error` means sleep again and retry; after 3 errors in a row, end the task with a message quoting the line.
 
   Each sleep costs one model turn, which is why the script picks long sleeps and ends the wait after 6 hours.

@@ -146,6 +146,20 @@ class WaitTest(IsolatedCacheTest):
         self.assertEqual(sleeps, [ug.WAIT_POLL])
 
 
+    def test_pause_after_failed_checks_stops_at_the_deadline(self) -> None:
+        start = time.time()
+        past_deadline = start + ug.MAX_WAIT_MINUTES * 60 + 5
+        clock = iter([start, start + 1, past_deadline, past_deadline + 1, past_deadline + 2])
+        failing = ug.Result([], error="network error")
+        with mock.patch.object(ug.time, "time", side_effect=lambda: next(clock)):
+            decision, sleeps = self.run_wait([failing, usage(99.0)])
+        self.assertEqual(decision.code, ug.EXIT_STOP)
+        self.assertTrue(decision.line.startswith("stop: 5h 99.0% used, resets "))
+        self.assertTrue(decision.line.endswith("; already waited 6 h"))
+        self.assertEqual(len(sleeps), 1)
+        self.assertFalse((ug._cache_dir() / "claude-pause.json").exists())
+
+
 class ArgsTest(unittest.TestCase):
     def assert_rejected(self, *argv: str) -> None:
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):

@@ -572,8 +572,14 @@ def wait_gate(provider: Provider, group: str | None, reserve: float) -> Decision
     deadline = time.time() + MAX_WAIT_MINUTES * 60
     while True:
         decision = gate(provider, collect(provider), group, datetime.now(timezone.utc), reserve)
-        # A pause cannot outlast the deadline (gate turns it into stop); a failing check can.
-        if decision.code in (EXIT_CONTINUE, EXIT_STOP) or time.time() >= deadline:
+        if decision.code in (EXIT_CONTINUE, EXIT_STOP):
+            return decision
+        if time.time() >= deadline:
+            if decision.code == EXIT_PAUSE:
+                # gate()'s pause timer starts at the first pause, so failed checks can leave it short of the deadline.
+                pause_clear(provider.key)
+                line = decision.line.removeprefix("pause: ").rsplit("; sleep ", 1)[0]
+                return Decision(EXIT_STOP, f"stop: {line}; already waited {MAX_WAIT_MINUTES // 60} h")
             return decision
         time.sleep(min(decision.sleep or WAIT_POLL, WAIT_POLL))
 
