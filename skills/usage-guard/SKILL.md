@@ -34,17 +34,27 @@ If you are none of these CLIs, say so once and continue the task unguarded.
 Every guard message you write is one line.
 
 1. Run `<provider> --gate` before you start, and then at the natural breaks in your own work: when you finish an item of your plan or todo list, after a test or build run, and before a commit. Run the check on its own, once the work before it has finished. Results are cached for 5 minutes, so checking often costs nothing.
+   Before a large unit of work (a subagent dispatch, a full test suite), add `--reserve N`: N is the share of the 5h window the unit will use. Take N from the largest rise between two `continue` lines around a comparable unit; start with 10.
 2. Act on the first word of the line it prints:
    - `continue`: keep working silently.
    - `pause`: tell the user you are pausing until the reset shown, then **wait** (below).
    - `stop`: end the task with a message quoting the line.
    - `error`: say once that usage is not being guarded, continue, and retry at the next break.
 
+### Delegating
+
+When you hand work to subagents, the dispatch is your control point: a running subagent spends until it reports back.
+
+- Gate before every dispatch, with `--reserve` covering every agent that will run at once; parallel agents add up.
+- End each subagent prompt with `Guard this task with /usage-guard.`, so a pause lands at a clean break inside the subagent's own work.
+
 ### Wait
 
-Repeat until `--gate` prints `continue`, then resume exactly where you left off:
+Wait until the gate prints `continue`, then resume exactly where you left off. Keep the `--reserve` you paused with. While waiting, the only commands you run are the wait and the check.
 
-1. Run `sleep N`, with N taken from the `sleep N` at the end of the `pause` line (at most 540 seconds). Set the shell tool timeout above it; in Claude Code use 600000 ms. If the shell refuses a foreground sleep, run it in the background and wait for it to finish. If a sleep is killed by a timeout, halve N.
-2. Run `--gate` again. `stop` ends the task as above. `error` means sleep again and retry.
+- **Claude Code main session:** run `<provider> --gate --wait` once as a background command and stay idle until it finishes. It sleeps and re-checks on its own for up to 6 hours, then prints one line: `continue` resumes, `stop` ends the task as above, `error` means the checks kept failing for 6 hours: end the task with a message quoting the line, because the last known state was exhausted. Do not run the wait again.
+- **Subagent or other CLI:** a subagent ends with its turn, so repeat in the foreground:
+  1. Run `sleep N`, with N taken from the `sleep N` at the end of the `pause` line (at most 540 seconds). Set the shell tool timeout above it; in Claude Code use 600000 ms. If the shell refuses a foreground sleep, run it in the background and wait for it to finish. If a sleep is killed by a timeout, halve N.
+  2. Run `--gate` again. `stop` ends the task as above. `error` means sleep again and retry; after 3 errors in a row, end the task with a message quoting the line.
 
-Each sleep costs one model turn, which is why the script picks long sleeps and ends the wait after 6 hours. While waiting, the only commands you run are the sleep and the check.
+  Each sleep costs one model turn, which is why the script picks long sleeps and ends the wait after 6 hours.
