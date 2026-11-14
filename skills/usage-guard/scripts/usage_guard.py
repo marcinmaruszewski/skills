@@ -23,7 +23,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -154,21 +154,37 @@ def clamp_percent(value: float) -> float:
 # ---------- Claude Code ----------
 
 
-def claude() -> list[Window]:
+def _claude_token_sources() -> Iterator[str | None]:
+    """Yield raw credential blobs, most specific first."""
+    if IS_MACOS:
+        service = ["security", "find-generic-password", "-s", "Claude Code-credentials"]
+        # Claude Code saves its login under the user's account name. Other items can share the
+        # service name (e.g. account "unknown" holding only MCP tokens), and without -a
+        # `security` returns whichever matches first.
+        yield run([*service, "-a", os.environ.get("USER") or getpass.getuser(), "-w"])
+        yield run([*service, "-w"])
+    config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", HOME / ".claude"))
+    yield read_text(config_dir / ".credentials.json")
+
+
+def _claude_token() -> str:
     token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
-    if not token:
-        raw = (
-            run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"])
-            if IS_MACOS
-            else None
-        )
-        config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", HOME / ".claude"))
-        raw = raw or read_text(config_dir / ".credentials.json")
-        if raw:
-            creds = json.loads(raw)
-            token = creds.get("claudeAiOauth", creds).get("accessToken")
-    if not token:
-        raise ProviderError("no credentials")
+    if token:
+        return token
+    for raw in _claude_token_sources():
+        try:
+            creds = json.loads(raw) if raw else None
+        except json.JSONDecodeError:
+            continue
+        oauth = creds.get("claudeAiOauth", creds) if isinstance(creds, dict) else None
+        token = oauth.get("accessToken") if isinstance(oauth, dict) else None
+        if token:
+            return token
+    raise ProviderError("no credentials")
+
+
+def claude() -> list[Window]:
+    token = _claude_token()
 
     data = http_json(
         "https://api.anthropic.com/api/oauth/usage",
