@@ -14,12 +14,16 @@ Change only what can be written without the release: `Dockerfile` `FROM` tags an
 
 ## Watch for the release
 
-When the advisory gives a release time, offer to watch for it. One check, with the path relative to this file's directory:
+When the advisory gives a release time, offer to watch for it. Convert that time to the user's time zone and show both in the plan, e.g. "15:00 UTC (16:00 local)".
+
+The **watch window** opens 5 minutes before the announced time and closes 6 hours after it. Before it opens, check nothing: schedule a wake-up at the opening with your agent's scheduling tool when it has one, else tell the user when to come back and end the turn. When the announced time has already passed, the window is open now.
+
+Inside the window, run one check every 5 minutes, with the script path relative to this file's directory:
 
 ```
 python3 scripts/check_release.py <ecosystem> <package> <version>
 ```
 
-Exit 0 means published, 1 means not yet, 2 means the check failed. Repeat it every 5 minutes by default, with your agent's own scheduling or loop tool when it has one, else with `sleep 300` between checks. Use the system crontab only when the user asks for it.
+Repeat it with your agent's own scheduling or loop tool when it has one, else with `sleep 300` between checks. Use the system crontab only when the user asks for it. An `error` line means retry at the next check.
 
-When the check exits 0, tell the user, switch to fix mode, re-run the inspection (the lock may have moved since), and continue from gate 1.
+When it prints `available`, tell the user, switch to fix mode, re-run the inspection (the lock may have moved since), and continue from gate 1. When the window closes first, stop watching and tell the user the release is late, quoting the last check.

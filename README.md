@@ -161,7 +161,7 @@ When a fix is announced for a later date, the agent prepares the project so the 
 
 - **Catch up.** If the project is behind the latest release, it plans an update to that release now (for example 8.4.22 → 8.4.31).
 - **Pre-stage.** It writes the change for the expected version before that version exists. The expected version is the one the advisory names, or else the latest patch plus one: with 8.5.22 out, it writes `php:8.5.23` into the Dockerfile. It commits locally and doesn't push until the release appears.
-- **Watch.** It checks the registry every 5 minutes. When the release appears, it switches to a normal update and starts again at the plan.
+- **Watch.** It checks the registry every 5 minutes, from 5 minutes before the announced release time until 6 hours after it. Before that it waits without checking. When the release appears, it switches to a normal update and starts again at the plan. If the window closes first, it stops and tells you the release is late.
 
 **Check a release yourself:**
 
