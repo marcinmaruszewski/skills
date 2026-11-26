@@ -1,0 +1,5 @@
+interface:
+  display_name: "Critical Update"
+  short_description: "Patch a vulnerability across projects, from advisory to deploy"
+policy:
+  allow_implicit_invocation: false
