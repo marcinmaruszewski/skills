@@ -1,0 +1,5 @@
+interface:
+  display_name: "Smoke Test"
+  short_description: "Check a site's home page and sitemap URLs for HTTP 200"
+policy:
+  allow_implicit_invocation: true
