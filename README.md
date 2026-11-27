@@ -150,10 +150,11 @@ When the advisory or the project is missing, the agent says what it needs and st
 | Plan | One short plan: versions, branch, command, extra steps | ✔ |
 | Update | Creates a new branch, or a worktree if your checkout has work in progress. Runs one command in the project's own container (`docker compose run --rm --no-deps …`) without starting the whole stack. Runs an audit before and after the update to show the advisory is fixed | |
 | Tests | Suggests the project's test command | ✔ |
-| Commit | Uses the repository's commit convention and passes its hooks | ✔ |
+| Commit | Checks the message against the hooks' rules before showing it, and prepares what the hooks need (e.g. installed dependencies), so the first attempt passes | ✔ |
 | Push, MR | Opens the MR with `gh` or `glab`, or with the skill you named | ✔ each |
-| Deploy | A subagent reads the CI/CD setup and recent runs to find how the team actually deploys. It warns if the target branch has other work not yet on production | ✔ every command |
+| Deploy | A subagent reads the CI/CD setup and recent runs to find how the team actually deploys. It warns if the target branch has other work not yet on production | ✔ every command, unless you approve a named step in advance (e.g. "play dev once the build is green") |
 | Smoke test | Offers [`smoke-test`](#smoke-test) on the deployed site | ✔ |
+| Clean up | Removes the worktree, the merged local branch and the Docker leftovers of the update's one-off runs | ✔ |
 
 ### Prepare mode
 

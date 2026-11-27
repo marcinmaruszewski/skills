@@ -22,7 +22,7 @@ A **gate** is a stop: show the exact plan, change or command, then wait for the 
 4. the MR/PR (step 6),
 5. every deploy command, one at a time (step 7).
 
-Read-only commands run freely: `git log`, `git fetch`, `gh run list`, `glab ci list`, `glab api` GET calls and the like. A state-changing command (push, MR, merge, job play, workflow dispatch, tag, release, `--no-verify`) passes a gate first. Production is on the other side of these gates, so hold every one even when the user approved a similar command earlier.
+Read-only commands run freely: `git log`, `git fetch`, `gh run list`, `glab ci list`, `glab api` GET calls and the like. A state-changing command (push, MR, merge, job play, workflow dispatch, tag, release, `--no-verify`) passes a gate first. Production is on the other side of these gates, so hold every one even when the user approved a similar command earlier. One case opens a gate in advance: the user names a step and its condition ("play the dev deploy once the build is green", "tag after dev succeeds"). Run that step when its condition holds and report it. Production deploys stay with the user unless they name them the same way.
 
 ## 1. Check the input
 
@@ -63,9 +63,9 @@ Each hand-off is `/critical-update <advisory link> <project path>` followed by t
 
 ## 2. Inspect the project
 
-Launch one read-only subagent, briefed with the path of [INSPECT.md](INSPECT.md), the advisory facts, the mode and the project path, and tell it to follow that file. Without a subagent tool, follow INSPECT.md yourself.
+Launch one read-only subagent, briefed with the path of [INSPECT.md](INSPECT.md), the advisory facts, the mode and the project path, and tell it to follow that file. The inspection always runs in a subagent, so its file reads stay out of the main session, which keeps only the report. Only an agent with no subagent tool follows INSPECT.md itself, and then it still writes out the full report.
 
-Done when the report has every field INSPECT.md requires. Send the subagent back to fill any field marked unknown that a file read could answer.
+Done when the report has every field INSPECT.md requires, filled in before step 3. Send the subagent back to fill any field marked unknown that a file read could answer.
 
 ## 3. Plan (gate 1)
 
@@ -73,18 +73,19 @@ Show the plan, short enough to read in a minute: mode, component, current → ta
 
 ## 4. Update
 
-1. **Git**: `git fetch`, then create the branch, or the worktree when the report says the checkout is busy, from fresh `origin/<default>` with the name from the report.
+1. **Git**: `git fetch`, then create the branch, or the worktree when the report says the checkout is busy, from fresh `origin/<default>` with the name from the report. In a worktree, copy in the untracked files the fast path needs, from the report.
 2. **Update** on the **fast path** from the report: run the single command in the project's own service (`docker compose run --rm --no-deps <service> …`), else in the official tool image with the project mounted and its platform settings, else with the host tool when versions match. Install only what the update needs: the full stack (`up`, `init`, `make install`) stays down. Name the advisory's packages explicitly with their dependencies (`--with-all-dependencies` or the ecosystem's equivalent); a wildcard such as `vendor/*` or `@scope/*` also catches dev packages pinned to other versions. Disable process timeouts (`COMPOSER_PROCESS_TIMEOUT=0` and the like) and mount the tool's cache. After a failed attempt, delete the partial `vendor/` or `node_modules/` before retrying.
 3. **Scope**: run `git status`. Keep the manifest, the lock and the files the sources require. Restore every other tracked file the install rewrote, and show any exception you keep.
 4. **Post-update steps**: take the need for migrations and config export from the sources and the report. Start a database locally only when a migration rewrites config files that must be committed: then bring up just the database and the app service, run the migration, export the config, and keep the exported files in this change. Otherwise the migration runs on deploy: confirm the pipeline runs it (the report says), or carry it into the MR as a manual step.
 5. **Verify**: the installed version equals the target; the audit (`composer audit`, `npm audit`, `pip-audit`, image scan, …) run on `origin/<default>` and on the new state shows the advisory gone; the cheap boot check from the report passes. Keep the before/after output as **evidence** for the MR.
 6. **Tests**: suggest the project's full test command from the report, ready to paste, and run it on the user's yes.
+7. **Hook setup**: prepare what the pre-commit hooks need (`hooks need` in the report), for example installing dependencies a lock-only update left out, in the same project service. Installed files stay untracked.
 
-Done when the project is updated, verified, and its diff holds only intended files.
+Done when the project is updated, verified, its diff holds only intended files, and the hooks have what they need to run.
 
 ## 5. Commit (gate 2)
 
-Write the message in the repository's convention, from the report: the previous similar commit and the rules its hooks enforce (commitlint, grumphp, pre-commit), so the first attempt passes. Show the files changed and the message; commit on yes. When a hook rejects the commit, adapt the message to the rule and show it again; skipping hooks is a gate of its own.
+Write the message that passed the hook matchers in the report (`matcher check: pass`), so the first attempt passes; when the report asks for a ticket, get it from the user first. Show the files changed and the message; commit on yes. When a hook rejects the commit, adapt the message to the rule and show it again; skipping hooks is a gate of its own.
 
 ## 6. Push and MR (gates 3 and 4)
 
@@ -96,12 +97,22 @@ Offer to push. Then offer the MR/PR, without merging. Its content: the advisory 
 
 ## 7. Deploy (gate 5)
 
-Offer help with the deploy. On yes, launch one read-only subagent, briefed with the path of [DEPLOY.md](DEPLOY.md), the project path, the host and the MR. Without a subagent tool, follow DEPLOY.md yourself.
+Offer help with the deploy. On yes, launch one read-only subagent, briefed with the path of [DEPLOY.md](DEPLOY.md), the project path, the host and the MR. This too always runs in a subagent, for the same reason; only an agent with no subagent tool follows DEPLOY.md itself.
 
-From the report, show the deploy path: each environment, what triggers it, which steps are manual. When the target branch holds work not yet on production, put the options from the report to the user and wait for a choice. Then walk the steps in order: show the exact command for the next state-changing step (merge, manual job, workflow dispatch, tag), run it on yes, and report its status before offering the next.
+From the report, show the deploy path: each environment, what triggers it, which steps are manual. When the target branch holds work not yet on production, put the options from the report to the user and wait for a choice. Then walk the steps in order: show the exact command for the next state-changing step (merge, manual job, workflow dispatch, tag), run it on yes, and report its status before offering the next. To wait for a job, run one background poll of its status that exits on a final state (success, failed, canceled, skipped), then read the result.
 
 Done when the project is on every environment the user chose, or the user stops.
 
 ## 8. Smoke test
 
 After each successful deploy, offer a smoke test of the deployed site and run it only on the user's yes. Then invoke the `smoke-test` skill with the site URLs. When it is not installed, request the home page and 20 random sitemap URLs with `curl -L` yourself, expect 200, and repeat on a fresh sample with a random `?cachebuster=` value when the site sits behind a cache.
+
+## 9. Clean up
+
+Once the change is on every environment the user chose, offer to clean up and run it on yes. Show what you will remove first:
+
+- the worktree (`git worktree remove <path>`) when step 4 made one;
+- the local branch (`git branch -d <branch>`, which succeeds once it is merged);
+- Docker leftovers from the update's one-off runs: containers, volumes and networks labelled `com.docker.compose.project=<worktree directory name>`, and the images built under that project name (`<project>-<service>`).
+
+Your main checkout and other worktrees stay as they are. The remote branch stays unless the user asks to delete it.
